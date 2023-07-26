@@ -1,6 +1,7 @@
 use axum::{
     extract::{self, Path},
     http::StatusCode,
+    response::Redirect,
     routing::{delete, get, post},
     Extension, Json, Router,
 };
@@ -25,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let addr: std::net::SocketAddr = std::net::SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr: std::net::SocketAddr = std::net::SocketAddr::from(([0, 0, 0, 0], 3001));
 
     println!("listening on {}", addr);
 
@@ -45,6 +46,12 @@ pub struct User {
     pub email: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Link {
+    pub id: String,
+    pub link: String,
+}
+
 /// Having a function that produces our app makes it easy to call it from tests
 /// without having to create an HTTP server.
 #[allow(dead_code)]
@@ -52,8 +59,10 @@ fn app() -> Router {
     Router::new()
         .route("/", get(handler))
         .route("/user", post(create_user))
+        .route("/link", post(create_link))
         .route("/users", get(get_users))
         .route("/user/:id", delete(delete_user))
+        .route("/:id", get(redirect))
 }
 
 async fn handler() -> &'static str {
@@ -111,6 +120,41 @@ pub async fn delete_user(state: Extension<Pool<Postgres>>, Path(user_id): Path<i
         .expect("Failed to delete user");
 
     StatusCode::NO_CONTENT
+}
+
+pub async fn create_link(
+    state: Extension<Pool<Postgres>>,
+    extract::Json(link): extract::Json<Link>,
+) -> Json<Link> {
+    let Extension(pool) = state;
+
+    let row = sqlx::query!(
+        "INSERT INTO links (id, link) VALUES ($1, $2) RETURNING id, link",
+        link.id,
+        link.link
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to create link");
+
+    Json(Link {
+        id: row.id,
+        link: row.link,
+    })
+}
+
+pub async fn redirect(
+    state: Extension<Pool<Postgres>>,
+    Path(short_id): Path<String>,
+) -> Result<Redirect, StatusCode> {
+    let Extension(pool) = state;
+
+    let row = sqlx::query!("SELECT link FROM links WHERE id = $1 LIMIT 1", short_id)
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to find short");
+    let redirect = Redirect::to(&row.link);
+    Ok(redirect)
 }
 
 #[cfg(test)]
