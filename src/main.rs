@@ -1,16 +1,15 @@
 use axum::{
-    extract::{self, Path},
-    http::StatusCode,
-    response::Redirect,
     routing::{delete, get, post},
-    Extension, Json, Router,
+    Extension, Router,
 };
 
 use dotenvy::dotenv;
+mod controllers;
+mod models;
+use controllers::link::{create_link, redirect};
+use controllers::user::{create_user, delete_user, get_users};
 
-use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{Pool, Postgres};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,20 +37,6 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct User {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
-    pub name: String,
-    pub email: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Link {
-    pub id: String,
-    pub link: String,
-}
-
 /// Having a function that produces our app makes it easy to call it from tests
 /// without having to create an HTTP server.
 #[allow(dead_code)]
@@ -67,94 +52,6 @@ fn app() -> Router {
 
 async fn handler() -> &'static str {
     "Let's Get Rusty!"
-}
-
-async fn get_users(state: Extension<Pool<Postgres>>) -> Json<Vec<User>> {
-    let Extension(pool) = state;
-
-    let records = sqlx::query!("SELECT * FROM users")
-        .fetch_all(&pool)
-        .await
-        .expect("failed to fetch users");
-
-    let records = records
-        .iter()
-        .map(|r| User {
-            id: Some(r.id),
-            name: r.name.to_string(),
-            email: r.email.clone(),
-        })
-        .collect();
-
-    Json(records)
-}
-
-pub async fn create_user(
-    state: Extension<Pool<Postgres>>,
-    extract::Json(user): extract::Json<User>,
-) -> Json<User> {
-    let Extension(pool) = state;
-
-    let row = sqlx::query!(
-        "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id, name, email",
-        user.name,
-        user.email
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to create user");
-
-    Json(User {
-        id: Some(row.id),
-        name: row.name,
-        email: row.email,
-    })
-}
-
-pub async fn delete_user(state: Extension<Pool<Postgres>>, Path(user_id): Path<i32>) -> StatusCode {
-    let Extension(pool) = state;
-
-    sqlx::query!("DELETE FROM users WHERE id = $1", user_id)
-        .execute(&pool)
-        .await
-        .expect("Failed to delete user");
-
-    StatusCode::NO_CONTENT
-}
-
-pub async fn create_link(
-    state: Extension<Pool<Postgres>>,
-    extract::Json(link): extract::Json<Link>,
-) -> Json<Link> {
-    let Extension(pool) = state;
-
-    let row = sqlx::query!(
-        "INSERT INTO links (id, link) VALUES ($1, $2) RETURNING id, link",
-        link.id,
-        link.link
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to create link");
-
-    Json(Link {
-        id: row.id,
-        link: row.link,
-    })
-}
-
-pub async fn redirect(
-    state: Extension<Pool<Postgres>>,
-    Path(short_id): Path<String>,
-) -> Result<Redirect, StatusCode> {
-    let Extension(pool) = state;
-
-    let row = sqlx::query!("SELECT link FROM links WHERE id = $1 LIMIT 1", short_id)
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to find short");
-    let redirect = Redirect::to(&row.link);
-    Ok(redirect)
 }
 
 #[cfg(test)]
