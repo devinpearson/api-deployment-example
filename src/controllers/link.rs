@@ -2,7 +2,7 @@ use axum::{
     extract::{self, Path},
     http::StatusCode,
     response::Redirect,
-    response::{ErrorResponse, IntoResponse, Response, Result},
+    response::{IntoResponse, Response, Result},
     Extension, Json,
 };
 use url::Url;
