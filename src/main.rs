@@ -1,4 +1,10 @@
 use axum::{
+    extract::TypedHeader,
+    headers::authorization::{Authorization, Basic},
+    http::Request,
+    http::StatusCode,
+    middleware::{self, Next},
+    response::Response,
     routing::{delete, get, post},
     Extension, Router,
 };
@@ -6,7 +12,7 @@ use axum::{
 use dotenvy::dotenv;
 mod controllers;
 mod models;
-use controllers::link::{create_link, redirect};
+use controllers::link::{create_link, redirect, update_link};
 use controllers::user::{create_user, delete_user, get_users};
 
 use sqlx::postgres::PgPoolOptions;
@@ -44,10 +50,32 @@ fn app() -> Router {
     Router::new()
         .route("/", get(handler))
         .route("/user", post(create_user))
-        .route("/link", post(create_link))
         .route("/users", get(get_users))
         .route("/user/:id", delete(delete_user))
+        .route_layer(middleware::from_fn(auth))
+        .route("/link", post(create_link).put(update_link))
         .route("/:id", get(redirect))
+}
+
+async fn auth<B>(
+    // run the `TypedHeader` extractor
+    TypedHeader(auth): TypedHeader<Authorization<Basic>>,
+    // you can also add more extractors here but the last
+    // extractor must implement `FromRequest` which
+    // `Request` does
+    request: Request<B>,
+    next: Next<B>,
+) -> Result<Response, StatusCode> {
+    if token_is_valid(auth.username(), auth.password()) {
+        let response = next.run(request).await;
+        Ok(response)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
+fn token_is_valid(username: &str, password: &str) -> bool {
+    username == "admin" && password == "password"
 }
 
 async fn handler() -> &'static str {

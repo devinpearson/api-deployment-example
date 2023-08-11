@@ -2,8 +2,10 @@ use axum::{
     extract::{self, Path},
     http::StatusCode,
     response::Redirect,
+    response::{ErrorResponse, IntoResponse, Response, Result},
     Extension, Json,
 };
+use url::Url;
 
 use crate::models::link::Link;
 //use serde_json::{json, Value};
@@ -12,13 +14,20 @@ use sqlx::{Pool, Postgres};
 pub async fn create_link(
     state: Extension<Pool<Postgres>>,
     extract::Json(link): extract::Json<Link>,
-) -> Json<Link> {
+) -> Response {
     let Extension(pool) = state;
-
+    let cleaned_link = Url::parse(&link.link);
+    if let Err(res) = cleaned_link {
+        return (StatusCode::BAD_REQUEST, Json(res).to_string()).into_response();
+    }
+    let cleaned_link = cleaned_link.unwrap();
+    if (cleaned_link.scheme() != "http") && (cleaned_link.scheme() != "https") {
+        return (StatusCode::BAD_REQUEST, "invalid url").into_response();
+    }
     let row = sqlx::query!(
         "INSERT INTO links (id, link) VALUES ($1, $2) RETURNING id, link",
         link.id,
-        link.link
+        cleaned_link.to_string()
     )
     .fetch_one(&pool)
     .await
@@ -28,6 +37,36 @@ pub async fn create_link(
         id: row.id,
         link: row.link,
     })
+    .into_response()
+}
+
+pub async fn update_link(
+    state: Extension<Pool<Postgres>>,
+    extract::Json(link): extract::Json<Link>,
+) -> Response {
+    let Extension(pool) = state;
+    let cleaned_link = Url::parse(&link.link);
+    if let Err(res) = cleaned_link {
+        return (StatusCode::BAD_REQUEST, Json(res).to_string()).into_response();
+    }
+    let cleaned_link = cleaned_link.unwrap();
+    if (cleaned_link.scheme() != "http") && (cleaned_link.scheme() != "https") {
+        return (StatusCode::BAD_REQUEST, "invalid url").into_response();
+    }
+    let row = sqlx::query!(
+        "UPDATE links SET link=$2 WHERE id=$1 RETURNING id, link",
+        link.id,
+        cleaned_link.as_str()
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to update link");
+
+    Json(Link {
+        id: row.id,
+        link: row.link,
+    })
+    .into_response()
 }
 
 pub async fn redirect(
