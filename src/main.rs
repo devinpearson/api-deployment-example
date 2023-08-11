@@ -48,11 +48,11 @@ async fn main() -> anyhow::Result<()> {
 #[allow(dead_code)]
 fn app() -> Router {
     Router::new()
-        .route("/", get(handler))
         .route("/user", post(create_user))
         .route("/users", get(get_users))
         .route("/user/:id", delete(delete_user))
         .route_layer(middleware::from_fn(auth))
+        .route("/", get(handler))
         .route("/link", post(create_link).put(update_link))
         .route("/:id", get(redirect))
 }
